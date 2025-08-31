@@ -1,0 +1,36 @@
+/* Usamos la fuente Inter para todo el cuerpo de la página */
+body {
+    font-family: 'Inter', sans-serif;
+}
+
+/* Animación para que los elementos aparezcan suavemente */
+.animate-fade-in {
+    animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Transición para el modal de confirmación */
+.modal {
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+/* Estilo para los botones de días que ya pasaron */
+.day-disabled {
+    background-color: #2d3748; /* Un gris más oscuro */
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+/* Evita que cambie de color al pasar el mouse por encima */
+.day-disabled:hover {
+    border-color: #4a5568;
+}
