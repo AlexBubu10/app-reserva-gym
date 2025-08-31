@@ -2,10 +2,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getFirestore, collection, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ==================================================================
-//  CONFIGURACIÓN DE FIREBASE (CON CORRECCIÓN)
+//  CONFIGURACIÓN DE FIREBASE 
 // ==================================================================
 const firebaseConfig = {
-  // CORRECCIÓN: Se eliminó la 'a' extra de 'aapiKey'.
   apiKey: "AIzaSyCHfz93Cz8TcfCyFutJa1QnJjLTxWFEs0E",
   authDomain: "appreservas-46f39.firebaseapp.com",
   projectId: "appreservas-46f39",
