@@ -1,9 +1,8 @@
+// Importamos las funciones de Firebase que necesitamos
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, query, where, onSnapshot, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-// ==================================================================
-//  CONFIGURACIÓN DE FIREBASE 
-// ==================================================================
+// Tu configuración de Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyCHfz93Cz8TcfCyFutJa1QnJjLTxWFEs0E",
   authDomain: "appreservas-46f39.firebaseapp.com",
@@ -13,7 +12,6 @@ const firebaseConfig = {
   appId: "1:948518294471:web:a2d372c94ed8f73d25bfe2",
   measurementId: "G-TMFHR2VE82"
 };
-// ==================================================================
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -46,6 +44,14 @@ const gymSchedule = {
     }
 };
 
+// ===== NUEVA FUNCIÓN PARA FORMATEAR FECHAS SIN ZONA HORARIA =====
+function getLocalDateString(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0'); // Meses son 0-indexados
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     // Selectores del DOM
     const activitySelector = document.getElementById('activity-selector');
@@ -61,8 +67,8 @@ document.addEventListener('DOMContentLoaded', function() {
     let selectedActivity = null;
     let selectedDate = null;
 
-    // 1. Renderiza las tarjetas de actividades
     function renderActivities() {
+        // ... (sin cambios)
         activitySelector.innerHTML = '';
         Object.keys(gymSchedule).forEach(activity => {
             const card = document.createElement('button');
@@ -73,12 +79,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // 2. Maneja la selección de una actividad
     function handleActivitySelection(activity, selectedCard) {
+        // ... (sin cambios)
         selectedActivity = activity;
-        document.querySelectorAll('#activity-selector button').forEach(btn => {
-            btn.classList.remove('border-2', 'border-cyan-500');
-        });
+        document.querySelectorAll('#activity-selector button').forEach(btn => btn.classList.remove('border-2', 'border-cyan-500'));
         selectedCard.classList.add('border-2', 'border-cyan-500');
         bookingFlow.classList.remove('hidden');
         setTimeout(() => bookingFlow.classList.remove('opacity-0'), 10);
@@ -87,17 +91,15 @@ document.addEventListener('DOMContentLoaded', function() {
         selectedDayText.textContent = '';
     }
     
-    // 3. Renderiza los días disponibles para la actividad
     function renderDaysForActivity(activity) {
+        // ... (sin cambios)
         daySelector.innerHTML = '';
         const today = new Date();
         const availableDaysInSchedule = gymSchedule[activity].schedule.map(slot => slot.day);
-
         for (let i = 0; i < 7; i++) {
             const date = new Date();
             date.setDate(today.getDate() + i);
             const dayOfWeek = date.getDay();
-            
             const isAvailable = availableDaysInSchedule.includes(dayOfWeek);
             const dayButton = document.createElement('button');
             dayButton.className = `p-3 rounded-lg font-semibold transition-colors duration-300 ${isAvailable ? 'bg-gray-700 hover:bg-cyan-600' : 'day-disabled'}`;
@@ -107,9 +109,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 dayButton.onclick = () => {
                     document.querySelectorAll('#day-selector button').forEach(btn => btn.classList.remove('bg-cyan-500'));
                     dayButton.classList.add('bg-cyan-500');
-                    selectedDate = date.toISOString().split('T')[0];
+                    // ===== USAMOS LA NUEVA FUNCIÓN DE FECHA =====
+                    selectedDate = getLocalDateString(date);
                     selectedDayText.textContent = date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric' });
-                    renderSchedule(activity, date); // Llama a renderSchedule
+                    renderSchedule(activity, date);
                 };
             } else {
                 dayButton.disabled = true;
@@ -118,13 +121,18 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // 4. Renderiza los horarios para la actividad y día seleccionados (FUNCIÓN CLAVE)
     async function renderSchedule(activity, date) {
         scheduleContainer.innerHTML = '<div class="text-center py-4"><div class="loader"></div></div>';
-        const dateString = date.toISOString().split('T')[0];
+        // ===== USAMOS LA NUEVA FUNCIÓN DE FECHA =====
+        const dateString = getLocalDateString(date);
         const reservationsRef = collection(db, 'reservations');
         const q = query(reservationsRef, where("date", "==", dateString), where("activity", "==", activity));
         
+        const now = new Date();
+        const todayString = getLocalDateString(now);
+        const isToday = (dateString === todayString);
+        const currentTimeString = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+
         try {
             const querySnapshot = await getDocs(q);
             const bookings = [];
@@ -143,11 +151,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 const bookingsForSlot = bookings.filter(b => b.time === slot.time).length;
                 const available = totalSlots - bookingsForSlot;
                 const isFull = available <= 0;
+                const isPast = isToday && slot.time < currentTimeString; 
+                const isDisabled = isFull || isPast;
+
+                let buttonText = 'Reservar';
+                if (isFull) buttonText = 'Completo';
+                if (isPast) buttonText = 'Expirado';
 
                 const card = document.createElement('div');
-                card.className = `bg-gray-800 p-4 rounded-lg flex flex-col sm:flex-row justify-between items-center gap-4 animate-fade-in ${isFull ? 'opacity-60' : ''}`;
-                
-                const buttonHtml = `<button class="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-400 text-gray-900 font-bold py-2 px-6 rounded-lg transition duration-300" ${isFull ? 'disabled' : ''}>${isFull ? 'Completo' : 'Reservar'}</button>`;
+                card.className = `bg-gray-800 p-4 rounded-lg flex flex-col sm:flex-row justify-between items-center gap-4 animate-fade-in ${isDisabled ? 'opacity-60' : ''}`;
+                const buttonHtml = `<button class="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-400 text-gray-900 font-bold py-2 px-6 rounded-lg transition duration-300" ${isDisabled ? 'disabled' : ''}>${buttonText}</button>`;
 
                 card.innerHTML = `
                     <div class="flex-grow text-center sm:text-left">
@@ -160,7 +173,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="w-full sm:w-auto">${buttonHtml}</div>
                 `;
                 
-                if (!isFull) {
+                if (!isDisabled) {
                     card.querySelector('button').addEventListener('click', () => handleReservation(slot.time));
                 }
                 
@@ -172,8 +185,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // 5. Maneja el proceso de guardar la reserva
     async function handleReservation(time) {
+        // ... (sin cambios)
         const userName = userNameInput.value.trim();
         if (!userName) {
             nameError.classList.remove('hidden');
@@ -181,46 +194,26 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         nameError.classList.add('hidden');
-
         try {
             const reservationsRef = collection(db, 'reservations');
-            // Verifica si el usuario ya tiene una reserva para ese día (en cualquier actividad)
             const q = query(reservationsRef, where("date", "==", selectedDate), where("name", "==", userName));
             const existingBookingSnapshot = await getDocs(q);
-            
             if (!existingBookingSnapshot.empty) {
                 showErrorModal();
                 return;
             }
-
-            const reservation = {
-                name: userName,
-                date: selectedDate,
-                time: time,
-                activity: selectedActivity
-            };
-            
+            const reservation = { name: userName, date: selectedDate, time: time, activity: selectedActivity };
             await addDoc(reservationsRef, reservation);
             showConfirmationModal(reservation);
-
         } catch (error) {
             console.error("Error al guardar reserva: ", error);
             alert("Hubo un error al intentar guardar tu reserva. Por favor, intentá de nuevo.");
         }
     }
     
-    // Funciones para mostrar los modales (sin cambios)
+    // ... (sin cambios en modales)
     function showConfirmationModal(reservation) {
-        confirmationModal.innerHTML = `
-            <div class="bg-gray-800 rounded-xl p-8 text-center max-w-sm mx-auto animate-fade-in">
-                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-500 mb-4">
-                    <svg class="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                </div>
-                <h3 class="text-2xl font-bold mb-2">¡Turno Confirmado!</h3>
-                <p class="text-gray-300 mb-6">Reservaste para ${reservation.activity} el ${new Date(reservation.date + 'T00:00:00').toLocaleDateString('es-ES', {weekday: 'long', day: 'numeric'})} a las ${reservation.time}hs.</p>
-                <button id="close-confirm-modal-btn" class="bg-cyan-500 hover:bg-cyan-400 text-gray-900 font-bold py-2 px-8 rounded-lg transition duration-300">Entendido</button>
-            </div>
-        `;
+        confirmationModal.innerHTML = `<div class="bg-gray-800 rounded-xl p-8 text-center max-w-sm mx-auto animate-fade-in"><div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-500 mb-4"><svg class="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></div><h3 class="text-2xl font-bold mb-2">¡Turno Confirmado!</h3><p class="text-gray-300 mb-6">Reservaste para ${reservation.activity} el ${new Date(reservation.date + 'T00:00:00').toLocaleDateString('es-ES', {weekday: 'long', day: 'numeric'})} a las ${reservation.time}hs.</p><button id="close-confirm-modal-btn" class="bg-cyan-500 hover:bg-cyan-400 text-gray-900 font-bold py-2 px-8 rounded-lg transition duration-300">Entendido</button></div>`;
         confirmationModal.classList.remove('invisible', 'opacity-0');
         confirmationModal.querySelector('#close-confirm-modal-btn').addEventListener('click', () => {
             confirmationModal.classList.add('invisible', 'opacity-0');
@@ -228,23 +221,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function showErrorModal() {
-        errorModal.innerHTML = `
-            <div class="bg-gray-800 rounded-xl p-8 text-center max-w-sm mx-auto animate-fade-in">
-                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-500 mb-4">
-                    <svg class="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                </div>
-                <h3 class="text-2xl font-bold mb-2">Reserva Duplicada</h3>
-                <p class="text-gray-300 mb-6">Ya tenés una reserva para este día. Solo se permite un turno por día por persona.</p>
-                <button id="close-error-modal-btn" class="bg-red-500 hover:bg-red-400 text-white font-bold py-2 px-8 rounded-lg transition duration-300">Entendido</button>
-            </div>
-        `;
+        errorModal.innerHTML = `<div class="bg-gray-800 rounded-xl p-8 text-center max-w-sm mx-auto animate-fade-in"><div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-500 mb-4"><svg class="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div><h3 class="text-2xl font-bold mb-2">Reserva Duplicada</h3><p class="text-gray-300 mb-6">Ya tenés una reserva para este día. Solo se permite un turno por día por persona.</p><button id="close-error-modal-btn" class="bg-red-500 hover:bg-red-400 text-white font-bold py-2 px-8 rounded-lg transition duration-300">Entendido</button></div>`;
         errorModal.classList.remove('invisible', 'opacity-0');
         errorModal.querySelector('#close-error-modal-btn').addEventListener('click', () => {
             errorModal.classList.add('invisible', 'opacity-0');
         });
     }
 
-    // Inicia la aplicación
     renderActivities();
 });
-
