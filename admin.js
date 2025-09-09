@@ -15,82 +15,107 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// ===== NUEVA FUNCIÓN PARA FORMATEAR FECHAS SIN ZONA HORARIA =====
 function getLocalDateString(date) {
     const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0'); // Meses son 0-indexados
+    const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
 }
 
-
 document.addEventListener('DOMContentLoaded', function() {
+    // Selectores del DOM
     const adminScheduleContainer = document.getElementById('admin-schedule-container');
-    const currentDateEl = document.getElementById('current-date');
+    const datePicker = document.getElementById('date-picker');
     const deleteModal = document.getElementById('delete-confirm-modal');
     const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
     const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
     const deleteConfirmText = document.getElementById('delete-confirmation-text');
 
     let reservationIdToDelete = null;
+    let unsubscribe; // Para manejar la escucha de Firebase
 
-    function setCurrentDate() {
-        const today = new Date();
-        currentDateEl.textContent = today.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    }
+    // ===== LÓGICA PRINCIPAL =====
 
+    // 1. Establece la fecha de hoy en el selector por defecto
+    datePicker.value = getLocalDateString(new Date());
+
+    // 2. Escucha los cambios en el selector de fecha para refrescar los datos
+    datePicker.addEventListener('change', fetchAndRenderReservations);
+
+    // 3. Función para buscar y mostrar las reservas del día seleccionado
     function fetchAndRenderReservations() {
-        // ===== USAMOS LA NUEVA FUNCIÓN DE FECHA =====
-        const today = getLocalDateString(new Date());
-        const reservationsRef = collection(db, 'reservations');
-        const q = query(reservationsRef, where("date", "==", today));
+        const selectedDate = datePicker.value;
+        if (!selectedDate) return;
 
-        onSnapshot(q, (snapshot) => {
-            const bookingsByTime = {};
+        // Si ya hay una escucha activa, la cancelamos antes de crear una nueva
+        if (unsubscribe) {
+            unsubscribe();
+        }
+
+        const reservationsRef = collection(db, 'reservations');
+        const q = query(reservationsRef, where("date", "==", selectedDate));
+
+        // onSnapshot escucha los cambios en tiempo real
+        unsubscribe = onSnapshot(q, (snapshot) => {
+            const bookingsByActivity = {};
             snapshot.forEach(doc => {
                 const booking = doc.data();
-                if (!bookingsByTime[booking.time]) {
-                    bookingsByTime[booking.time] = [];
+                const { activity, time } = booking;
+                if (!bookingsByActivity[activity]) {
+                    bookingsByActivity[activity] = {};
                 }
-                bookingsByTime[booking.time].push({ id: doc.id, ...booking });
+                if (!bookingsByActivity[activity][time]) {
+                    bookingsByActivity[activity][time] = [];
+                }
+                bookingsByActivity[activity][time].push({ id: doc.id, ...booking });
             });
-            renderAdminSchedule(bookingsByTime);
+            renderAdminSchedule(bookingsByActivity);
         });
     }
 
-    function renderAdminSchedule(bookingsByTime) {
-        if (Object.keys(bookingsByTime).length === 0) {
-            adminScheduleContainer.innerHTML = '<div class="bg-gray-800 p-6 rounded-lg text-center text-gray-400">No hay reservas para hoy.</div>';
+    // 4. Función para "dibujar" el calendario agrupado en la pantalla
+    function renderAdminSchedule(bookingsByActivity) {
+        if (Object.keys(bookingsByActivity).length === 0) {
+            adminScheduleContainer.innerHTML = `<div class="bg-gray-800 p-6 rounded-lg text-center text-gray-400">No hay reservas para la fecha seleccionada.</div>`;
             return;
         }
 
         adminScheduleContainer.innerHTML = '';
-        Object.keys(bookingsByTime).sort().forEach(time => {
-            const card = document.createElement('div');
-            card.className = 'bg-gray-800 p-4 rounded-lg shadow-lg';
-            
-            const userList = bookingsByTime[time].map(booking => `
-                <li class="flex justify-between items-center py-2">
-                    <span>${booking.name}</span>
-                    <div class="flex items-center gap-4">
-                        <span class="text-cyan-400 text-sm font-semibold bg-gray-700 px-2 py-1 rounded">${booking.activity}</span>
-                        <button class="delete-btn" data-id="${booking.id}" data-name="${booking.name}" title="Eliminar reserva">
-                            <svg class="h-5 w-5 text-gray-500 hover:text-red-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                        </button>
-                    </div>
-                </li>`
-            ).join('');
+        Object.keys(bookingsByActivity).sort().forEach(activity => {
+            const activityCard = document.createElement('div');
+            activityCard.className = 'bg-gray-800 p-4 rounded-lg shadow-lg';
 
-            card.innerHTML = `
-                <h3 class="text-xl font-bold text-white mb-3 pb-2 border-b border-gray-700">${time}hs</h3>
-                <ul class="text-gray-300 divide-y divide-gray-700">${userList}</ul>
+            let timeSlotsHtml = '';
+            Object.keys(bookingsByActivity[activity]).sort().forEach(time => {
+                // ===== CORRECCIÓN DE DISEÑO AQUÍ =====
+                const userList = bookingsByActivity[activity][time].map(booking => `
+                    <li class="flex justify-between items-center py-2 group">
+                        <span>${booking.name}</span>
+                        <button class="delete-btn p-1 rounded-full hover:bg-gray-700 transition-colors" data-id="${booking.id}" data-name="${booking.name}" title="Eliminar reserva">
+                            <svg class="h-5 w-5 text-gray-400 group-hover:text-red-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </li> 
+                `).join(''); // Se corrigió </div> por </li>
+
+                timeSlotsHtml += `
+                    <div class="mt-3">
+                        <h4 class="text-md font-semibold text-cyan-400">${time}hs</h4>
+                        <ul class="text-gray-300 divide-y divide-gray-700">${userList}</ul>
+                    </div>
+                `;
+            });
+            
+            activityCard.innerHTML = `
+                <h3 class="text-xl font-bold text-white mb-2 pb-2 border-b border-gray-700">${activity}</h3>
+                <div>${timeSlotsHtml}</div>
             `;
-            adminScheduleContainer.appendChild(card);
+            adminScheduleContainer.appendChild(activityCard);
         });
     }
 
+    // ===== MANEJO DE ELIMINACIÓN (SIN CAMBIOS) =====
+    
     adminScheduleContainer.addEventListener('click', (e) => {
-        // ... (sin cambios)
         const deleteButton = e.target.closest('.delete-btn');
         if (deleteButton) {
             reservationIdToDelete = deleteButton.dataset.id;
@@ -101,21 +126,16 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     cancelDeleteBtn.addEventListener('click', () => {
-        // ... (sin cambios)
         deleteModal.classList.add('hidden');
         reservationIdToDelete = null;
     });
 
     confirmDeleteBtn.addEventListener('click', async () => {
-        // ... (sin cambios)
         if (reservationIdToDelete) {
             try {
-                const docRef = doc(db, 'reservations', reservationIdToDelete);
-                await deleteDoc(docRef);
-                console.log("Reserva eliminada con éxito");
+                await deleteDoc(doc(db, 'reservations', reservationIdToDelete));
             } catch (error) {
                 console.error("Error al eliminar la reserva: ", error);
-                alert("No se pudo eliminar la reserva. Intentá de nuevo.");
             } finally {
                 deleteModal.classList.add('hidden');
                 reservationIdToDelete = null;
@@ -123,6 +143,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    setCurrentDate();
+    // Carga inicial de las reservas para el día de hoy
     fetchAndRenderReservations();
 });
+
+
